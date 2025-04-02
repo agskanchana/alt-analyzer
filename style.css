@@ -1,0 +1,79 @@
+body {
+    padding: 20px 0;
+    background-color: #f8f9fa;
+}
+
+.header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding: 20px;
+    background-color: #fff;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.card {
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.loading {
+    display: none;
+    margin: 20px 0;
+    padding: 15px;
+    border-radius: 5px;
+    background-color: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.results {
+    margin-top: 20px;
+}
+
+.results-table {
+    margin-top: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.missing-alt {
+    background-color: #ffebee !important;
+    color: #d32f2f;
+}
+
+.short-alt {
+    background-color: #fff8e1 !important;
+    color: #ff8f00;
+}
+
+.good-alt {
+    background-color: #e8f5e9 !important;
+    color: #2e7d32;
+}
+
+.img-thumbnail {
+    max-width: 150px;
+    max-height: 75px;
+}
+
+.status-icon {
+    font-size: 1.2rem;
+    margin-right: 5px;
+}
+
+.export-btn {
+    margin-top: 10px;
+    margin-bottom: 20px;
+}
+
+#export-btn {
+    margin-top: 15px;
+}
+
+.table img {
+    border: 1px solid #dee2e6;
+    object-fit: contain;
+}
+
+.table td {
+    vertical-align: middle;
+}
