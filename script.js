@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Tooltip(tooltipTriggerEl)
     });
 
-    // Rest of your code...
+    // Your existing elements
     const sitemapUrlInput = document.getElementById('sitemap-url');
     const websiteUrlInput = document.getElementById('website-url');
     const maxPagesInput = document.getElementById('max-pages');
@@ -33,6 +33,9 @@ document.addEventListener('DOMContentLoaded', function() {
     let baseDomain = '';
     let includeExternalImages = false;
     let shouldStayOnDomain = true;
+
+    // PHP API endpoint
+    const API_ENDPOINT = 'api.php';
 
     // Sitemap analysis button click handler
     analyzeSitemapBtn.addEventListener('click', function() {
@@ -87,117 +90,83 @@ document.addEventListener('DOMContentLoaded', function() {
         startWebsiteCrawl(websiteUrl);
     });
 
-    // Original sitemap analysis function (keep this as-is)
+    // Function to fetch a sitemap and get URLs
+    async function fetchSitemapUrls(sitemapUrl) {
+        try {
+            const response = await fetch(`${API_ENDPOINT}?action=sitemap&url=${encodeURIComponent(sitemapUrl)}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+
+            if (data.error) {
+                throw new Error(data.error + (data.message ? `: ${data.message}` : ''));
+            }
+
+            return data.urls || [];
+        } catch (error) {
+            console.error(`Error fetching sitemap ${sitemapUrl}:`, error);
+            throw error;
+        }
+    }
+
+    // Sitemap analysis function
     async function startSitemapAnalysis(sitemapUrl) {
-        loadingText.textContent = "Analyzing sitemap...";
         try {
             // Show loading
             loading.style.display = 'block';
-            console.log('Starting analysis of: ' + sitemapUrl);
+            loadingText.textContent = "Analyzing sitemap...";
 
-            // Fetch the sitemap directly - we'll handle CORS another way
-            const xmlText = await fetchWithProxy(sitemapUrl);
-            console.log('Fetched XML content length:', xmlText.length);
-            console.log('XML content preview:', xmlText.substring(0, 500)); // Log a preview of the XML
+            // Update the summary
+            summary.style.display = 'block';
+            summaryContent.innerHTML = `<p>Analyzing sitemap: ${sitemapUrl}</p>`;
 
-            // Parse the XML
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+            updateProgress(10);
 
-            // Debug - log the parsed XML and check for parsing errors
-            console.log('Parsed XML document:', xmlDoc.documentElement.tagName);
-            const parsingError = xmlDoc.getElementsByTagName('parsererror');
-            if (parsingError.length > 0) {
-                throw new Error('XML parsing error: ' + parsingError[0].textContent);
+            // Fetch and parse the sitemap
+            const sitemapData = await fetch(`${API_ENDPOINT}?action=sitemap&url=${encodeURIComponent(sitemapUrl)}`)
+                .then(response => response.json());
+
+            if (sitemapData.error) {
+                throw new Error(sitemapData.error + (sitemapData.message ? `: ${sitemapData.message}` : ''));
             }
 
-            // Define namespace
-            const ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
-
-            // Detect the type of sitemap using namespace-aware methods
-            const sitemapIndex = xmlDoc.getElementsByTagNameNS(ns, 'sitemapindex').length > 0;
-            const urlSet = xmlDoc.getElementsByTagNameNS(ns, 'urlset').length > 0;
-
-            console.log('Is sitemap index?', sitemapIndex);
-            console.log('Is regular sitemap?', urlSet);
+            updateProgress(20);
 
             let pageUrls = [];
 
-            if (sitemapIndex) {
+            if (sitemapData.type === 'sitemapindex') {
                 // This is a sitemap index
-                console.log('Detected sitemap index');
-                const sitemapElements = xmlDoc.getElementsByTagNameNS(ns, 'sitemap');
-                console.log(`Found ${sitemapElements.length} sitemap elements`);
+                summaryContent.innerHTML = `<p>Found ${sitemapData.urls.length} sitemaps in the index.</p>`;
 
-                const locElements = [];
+                // Process each sitemap in the index
+                for (let i = 0; i < sitemapData.urls.length; i++) {
+                    const subSitemapUrl = sitemapData.urls[i];
+                    updateProgress(20 + (i / sitemapData.urls.length) * 30);
+                    loadingText.textContent = `Processing sitemap ${i + 1} of ${sitemapData.urls.length}...`;
 
-                // Get all loc elements within sitemaps
-                for (let i = 0; i < sitemapElements.length; i++) {
-                    const locElement = sitemapElements[i].getElementsByTagNameNS(ns, 'loc');
-                    if (locElement.length > 0) {
-                        locElements.push(locElement[0]);
-                    }
-                }
-
-                console.log(`Found ${locElements.length} location elements in sitemap index`);
-                summary.style.display = 'block';
-                summaryContent.innerHTML = `<p>Found ${locElements.length} sitemaps in the index.</p>`;
-
-                // For each sitemap in the index, get its URLs
-                for (let i = 0; i < locElements.length; i++) {
-                    const subSitemapUrl = locElements[i].textContent.trim();
-                    console.log(`Processing sub-sitemap ${i+1}/${locElements.length}: ${subSitemapUrl}`);
-
-                    // Update progress
-                    updateProgress((i / locElements.length) * 20); // First 20% for sitemap collection
-
-                    // Get the URLs from this sitemap
                     try {
                         const subSitemapUrls = await fetchSitemapUrls(subSitemapUrl);
                         pageUrls = pageUrls.concat(subSitemapUrls);
-                        console.log(`Found ${subSitemapUrls.length} URLs in sitemap ${i+1}`);
                     } catch (error) {
                         console.error(`Error processing sub-sitemap ${subSitemapUrl}:`, error);
                     }
                 }
-            } else if (urlSet) {
+            } else if (sitemapData.type === 'urlset') {
                 // This is a regular sitemap
-                console.log('Detected regular sitemap');
-                const urlElements = xmlDoc.getElementsByTagNameNS(ns, 'url');
-                console.log(`Found ${urlElements.length} URL elements`);
-
-                for (let i = 0; i < urlElements.length; i++) {
-                    const locElements = urlElements[i].getElementsByTagNameNS(ns, 'loc');
-                    if (locElements.length > 0) {
-                        pageUrls.push(locElements[0].textContent.trim());
-                    }
-                }
+                pageUrls = sitemapData.urls;
             } else {
-                // If we can't detect the format, try dump the XML structure
-                console.error('Could not identify sitemap format - neither sitemapindex nor urlset found');
-                console.log('Root element:', xmlDoc.documentElement.tagName);
-                console.log('Root children:', xmlDoc.documentElement.childNodes.length);
-                console.log('First few children tags:',
-                    Array.from(xmlDoc.documentElement.childNodes)
-                        .filter(node => node.nodeType === 1)
-                        .slice(0, 5)
-                        .map(node => node.tagName)
-                );
-                throw new Error('Could not identify sitemap format - neither sitemapindex nor urlset found');
+                throw new Error('Unknown sitemap format');
             }
 
-            console.log(`Total unique URLs found: ${pageUrls.length}`);
+            // Remove duplicates
+            pageUrls = [...new Set(pageUrls)];
+
+            updateProgress(50);
             summaryContent.innerHTML = `<p>Found ${pageUrls.length} unique URLs in the sitemap(s).</p>
                                       <p>Now checking each page for images...</p>`;
 
-            // Limit to a reasonable number of URLs for performance
-            const MAX_URLS = 100;
-            if (pageUrls.length > MAX_URLS) {
-                console.log(`Limiting analysis to ${MAX_URLS} URLs for performance`);
-                pageUrls = pageUrls.slice(0, MAX_URLS);
-            }
-
-            // Update table header for image analysis
+            // Set up the table headers
             const thead = resultsTable.querySelector('thead');
             thead.innerHTML = `
                 <tr>
@@ -219,7 +188,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Initialize counters for images
             let imageStats = {
                 total: 0,
-                missing: 0
+                missing: 0,
+                pages: 0
             };
 
             // Process each URL to check for images and alt tags
@@ -238,13 +208,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // New website crawling function
+    // Website crawling function
     async function startWebsiteCrawl(startUrl) {
         try {
             // Reset crawler state
             visitedUrls = new Set();
             urlQueue = [];
-            currentDepth = 0;
 
             // Initialize crawl
             urlQueue.push({ url: startUrl, depth: 0 });
@@ -307,23 +276,82 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateProgress((urlsProcessed / maxPages) * 100);
                 loadingText.textContent = `Crawling page ${urlsProcessed}/${maxPages}...`;
 
-                console.log(`Crawling [${depth}] ${url} (${urlsProcessed}/${maxPages})`);
-
                 try {
-                    // Process this page for images
-                    const imagesFound = await processUrl(url, imageStats);
+                    // Process this page using our PHP backend
+                    const response = await fetch(`${API_ENDPOINT}?action=analyze-page&url=${encodeURIComponent(url)}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const pageData = await response.json();
+
+                    if (pageData.error) {
+                        throw new Error(pageData.error + (pageData.message ? `: ${pageData.message}` : ''));
+                    }
+
+                    // Process images from this page
+                    for (const image of pageData.images) {
+                        // Check if we should include external images
+                        if (!includeExternalImages) {
+                            try {
+                                const imgDomain = new URL(image.src).hostname;
+                                if (imgDomain !== baseDomain) {
+                                    console.log(`Skipping external image: ${image.src}`);
+                                    continue;
+                                }
+                            } catch (e) {
+                                console.warn(`Invalid image URL: ${image.src}`);
+                                continue;
+                            }
+                        }
+
+                        // Update stats
+                        imageStats.total++;
+                        if (image.hasMissingAlt) {
+                            imageStats.missing++;
+                        }
+
+                        // Add to results table
+                        addImageResult(url, image.src, image.alt, imageStats.total);
+                    }
 
                     // Only continue crawling if we're not at max depth
                     if (depth < maxDepth) {
-                        // Get links from the page and add them to the queue
-                        const newUrls = await extractLinksFromPage(url, depth);
-
                         // Add new URLs to the queue
-                        urlQueue.push(...newUrls.map(newUrl => ({
-                            url: newUrl,
-                            depth: depth + 1
-                        })));
+                        for (const newUrl of pageData.links) {
+                            // Skip if we've already visited or queued this URL
+                            if (visitedUrls.has(newUrl) || urlQueue.some(item => item.url === newUrl)) {
+                                continue;
+                            }
+
+                            // Check if we should stay on the same domain
+                            if (shouldStayOnDomain) {
+                                try {
+                                    const linkDomain = new URL(newUrl).hostname;
+                                    if (linkDomain !== baseDomain) {
+                                        continue;
+                                    }
+                                } catch (e) {
+                                    continue;
+                                }
+                            }
+
+                            // Skip non-HTML resources
+                            const fileExtension = newUrl.split('?')[0].split('#')[0].split('.').pop().toLowerCase();
+                            const nonHtmlExtensions = [
+                                'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico',
+                                'css', 'js', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'zip', 'rar', 'exe',
+                                'mp3', 'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm'
+                            ];
+
+                            if (nonHtmlExtensions.includes(fileExtension)) {
+                                continue;
+                            }
+
+                            urlQueue.push({ url: newUrl, depth: depth + 1 });
+                        }
                     }
+
                 } catch (error) {
                     console.error(`Error processing ${url}:`, error);
                 }
@@ -342,237 +370,54 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Add this function to help debug crawler issues
-    function logCrawlerStatus(message, data = null) {
-        const timestamp = new Date().toLocaleTimeString();
-        console.log(`[${timestamp}] CRAWLER: ${message}`);
-        if (data) {
-            console.log(data);
-        }
-    }
-
-    // Enhance extractLinksFromPage with better debugging
-    async function extractLinksFromPage(url, currentDepth) {
-        try {
-            logCrawlerStatus(`Extracting links from ${url} at depth ${currentDepth}`);
-
-            // Fetch the page
-            const html = await fetchWithProxy(url);
-            logCrawlerStatus(`Fetched HTML (${html.length} bytes)`);
-
-            // Parse the HTML
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-
-            // Find all links
-            const links = doc.getElementsByTagName('a');
-            logCrawlerStatus(`Found ${links.length} links on page`);
-
-            const newUrls = [];
-
-            for (let i = 0; i < links.length; i++) {
-                const href = links[i].getAttribute('href');
-
-                // Skip empty links, anchors, javascript, etc.
-                if (!href || href.startsWith('#') || href.startsWith('javascript:') ||
-                    href.startsWith('mailto:') || href.startsWith('tel:')) {
-                    continue;
-                }
-
-                try {
-                    // Normalize URL
-                    const absoluteUrl = new URL(href, url).href;
-
-                    // Skip if we've already visited or queued this URL
-                    if (visitedUrls.has(absoluteUrl) || urlQueue.some(item => item.url === absoluteUrl)) {
-                        continue;
-                    }
-
-                    // Check if we should stay on the same domain
-                    if (shouldStayOnDomain) {
-                        const linkDomain = new URL(absoluteUrl).hostname;
-                        if (linkDomain !== baseDomain) {
-                            logCrawlerStatus(`Skipping external domain: ${linkDomain} !== ${baseDomain}`);
-                            continue;
-                        }
-                    }
-
-                    // Skip non-HTML resources
-                    const fileExtension = absoluteUrl.split('?')[0].split('#')[0].split('.').pop().toLowerCase();
-                    const nonHtmlExtensions = [
-                        'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico',
-                        'css', 'js', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'zip', 'rar', 'exe',
-                        'mp3', 'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm'
-                    ];
-
-                    if (nonHtmlExtensions.includes(fileExtension)) {
-                        continue;
-                    }
-
-                    newUrls.push(absoluteUrl);
-                    logCrawlerStatus(`Added URL to queue: ${absoluteUrl}`);
-
-                } catch (e) {
-                    // Skip invalid URLs
-                    logCrawlerStatus(`Invalid URL: ${href} on page ${url}`, e);
-                }
-            }
-
-            logCrawlerStatus(`Extracted ${newUrls.length} new URLs to crawl`);
-            return newUrls;
-        } catch (error) {
-            logCrawlerStatus(`Error extracting links from ${url}:`, error);
-            return [];
-        }
-    }
-
-    async function fetchSitemapUrls(sitemapUrl) {
-        try {
-            // Fetch the sitemap
-            console.log('Fetching sub-sitemap:', sitemapUrl);
-            const xmlText = await fetchWithProxy(sitemapUrl);
-            console.log(`Fetched sub-sitemap content length: ${xmlText.length}`);
-
-            // Parse the XML
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-
-            // Check for parsing errors
-            const parsingError = xmlDoc.getElementsByTagName('parsererror');
-            if (parsingError.length > 0) {
-                console.error('XML parsing error in sub-sitemap:', parsingError[0].textContent);
-                return [];
-            }
-
-            // Define namespace
-            const ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
-
-            // Extract URLs
-            const urls = [];
-            const urlElements = xmlDoc.getElementsByTagNameNS(ns, 'url');
-            console.log(`Found ${urlElements.length} URLs in sub-sitemap`);
-
-            for (let i = 0; i < urlElements.length; i++) {
-                const locElements = urlElements[i].getElementsByTagNameNS(ns, 'loc');
-                if (locElements.length > 0) {
-                    urls.push(locElements[0].textContent.trim());
-                }
-            }
-
-            return urls;
-        } catch (error) {
-            console.error('Error fetching sub-sitemap:', error, sitemapUrl);
-            return [];
-        }
-    }
-
+    // Function to process a batch of URLs and check for images
     async function processUrlsForImages(urls, stats) {
-        const batchSize = 5; // Process 5 URLs at a time to avoid overwhelming the browser
-        let processedCount = 0;
+        // Process URLs in smaller batches to avoid overloading
+        const batchSize = 5;
 
         for (let i = 0; i < urls.length; i += batchSize) {
             const batch = urls.slice(i, i + batchSize);
-            const batchPromises = batch.map(url => processUrl(url, stats));
 
-            await Promise.all(batchPromises);
+            // Update progress
+            updateProgress(50 + (i / urls.length) * 50);
+            loadingText.textContent = `Analyzing page ${i + 1} to ${Math.min(i + batchSize, urls.length)} of ${urls.length}...`;
 
-            processedCount += batch.length;
-            // Calculate progress: 20% for sitemap collection, 80% for page processing
-            const progress = 20 + ((processedCount / urls.length) * 80);
-            updateProgress(progress);
-        }
-    }
-
-    async function processUrl(url, stats) {
-        try {
-            console.log(`Processing page: ${url}`);
-            // Fetch the page
-            const html = await fetchWithProxy(url);
-
-            // Parse the HTML
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-
-            // Find all images - both regular and lazy-loaded ones
-            const images = doc.getElementsByTagName('img');
-            console.log(`Found ${images.length} image elements on ${url}`);
-
-            // Process each image
-            let processedImages = 0;
-            for (let i = 0; i < images.length; i++) {
-                const img = images[i];
-
-                // Check for regular src or data-src (used by many lazyload implementations)
-                let src = img.getAttribute('src');
-
-                // If no src or it's a tiny placeholder, look for data-src or other common lazy load attributes
-                if (!src || src.startsWith('data:') || src.includes('blank.gif') || src.includes('placeholder')) {
-                    // Check common lazy load attribute patterns
-                    const dataSrc = img.getAttribute('data-src') ||
-                                    img.getAttribute('data-lazy-src') ||
-                                    img.getAttribute('data-original') ||
-                                    img.getAttribute('lazy-src');
-
-                    if (dataSrc) {
-                        src = dataSrc;
-                        console.log(`Found lazy-loaded image with data-src: ${dataSrc}`);
-                    }
-                }
-
-                const alt = img.getAttribute('alt');
-
-                // Skip tiny images or icons by checking attributes
-                const width = parseInt(img.getAttribute('width') || '0');
-                const height = parseInt(img.getAttribute('height') || '0');
-
-                if ((width > 0 && width < 50) || (height > 0 && height < 50)) {
-                    console.log(`Skipping small image: ${src} (${width}x${height})`);
-                    continue;
-                }
-
-                // Skip if no src or data URI after checking for lazy load attributes
-                if (!src || src.startsWith('data:') || src.length < 5) {
-                    continue;
-                }
-
-                // Try to get absolute URL
-                let imgUrl;
+            // Process the batch in parallel
+            await Promise.all(batch.map(async url => {
                 try {
-                    imgUrl = new URL(src, url).href;
-
-                    // Check if we should include external images
-                    if (!includeExternalImages) {
-                        const imgDomain = new URL(imgUrl).hostname;
-                        if (imgDomain !== baseDomain) {
-                            console.log(`Skipping external image: ${imgUrl}`);
-                            continue;
-                        }
+                    // Use the PHP backend to analyze the page
+                    const response = await fetch(`${API_ENDPOINT}?action=analyze-page&url=${encodeURIComponent(url)}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
                     }
-                } catch (e) {
-                    console.warn(`Invalid image URL: ${src} on page ${url}`);
-                    continue;
+
+                    const pageData = await response.json();
+
+                    if (pageData.error) {
+                        throw new Error(pageData.error + (pageData.message ? `: ${pageData.message}` : ''));
+                    }
+
+                    // Process images from this page
+                    for (const image of pageData.images) {
+                        // Update stats
+                        stats.total++;
+                        if (image.hasMissingAlt) {
+                            stats.missing++;
+                        }
+
+                        // Add to results table
+                        addImageResult(url, image.src, image.alt, stats.total);
+                    }
+
+                    stats.pages++;
+                } catch (error) {
+                    console.error(`Error processing ${url}:`, error);
                 }
-
-                processedImages++;
-
-                // Update stats
-                stats.total++;
-                if (!alt) {
-                    stats.missing++;
-                }
-
-                // Add to results table
-                addImageResult(url, imgUrl, alt || '', stats.total);
-            }
-
-            console.log(`Processed ${processedImages} total images on ${url}`);
-            return processedImages;
-        } catch (error) {
-            console.error(`Error processing ${url}:`, error);
-            return 0;
+            }));
         }
     }
 
+    // Function to add an image result to the table
     function addImageResult(pageUrl, imgSrc, altText, index) {
         const row = document.createElement('tr');
 
@@ -584,30 +429,19 @@ document.addEventListener('DOMContentLoaded', function() {
             row.className = 'table-danger';
         }
 
-        // Create a URL object to extract parts
-        let urlDisplay;
-        try {
-            const urlObj = new URL(pageUrl);
-            const domain = urlObj.hostname;
-            const path = urlObj.pathname;
-
-            urlDisplay = `
+        row.innerHTML = `
+            <td>${index}</td>
+            <td>
                 <div class="page-url">
-                    <a href="${pageUrl}" target="_blank" class="" title="${pageUrl}">
+                    <a href="${pageUrl}" target="_blank" data-bs-toggle="tooltip" title="${pageUrl}">
                         ${pageUrl}
                     </a>
-                    <button class="btn btn-sm btn-outline-secondary ms-1 copy-url" title="Copy URL" data-url="${pageUrl}">
+                    <button class="btn btn-sm btn-outline-secondary ms-1 copy-url"
+                           data-bs-toggle="tooltip" title="Copy URL" data-url="${pageUrl}">
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
-            `;
-        } catch (e) {
-            urlDisplay = `<div class="page-url">${pageUrl}</div>`;
-        }
-
-        row.innerHTML = `
-            <td>${index}</td>
-            <td>${urlDisplay}</td>
+            </td>
             <td><img src="${imgSrc}" class="img-thumbnail"
                 onerror="this.onerror=null; this.src='https://via.placeholder.com/150x75?text=Image+Not+Available'"></td>
             <td>${isMissing ? '<span class="badge bg-danger">Missing Alt Text</span>' : altText}</td>
@@ -639,11 +473,42 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             });
         }
+
+        // Initialize tooltips for this row
+        var tooltipTriggerList = [].slice.call(row.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
+        });
     }
 
-    function shortenText(text, maxLength) {
-        if (text.length <= maxLength) return text;
-        return text.substr(0, maxLength) + '...';
+    function setupUrlToggle() {
+        // Add event listener for toggle
+        document.getElementById('toggle-urls').addEventListener('click', function() {
+            const urlCells = document.querySelectorAll('.page-url');
+            const isExpanded = this.getAttribute('data-expanded') === 'true';
+
+            if (isExpanded) {
+                // Collapse URLs
+                urlCells.forEach(cell => {
+                    cell.style.maxWidth = '300px';
+                });
+                this.innerHTML = '<i class="fas fa-expand-alt"></i>';
+                this.setAttribute('data-expanded', 'false');
+                this.setAttribute('title', 'Show full URLs');
+            } else {
+                // Expand URLs
+                urlCells.forEach(cell => {
+                    cell.style.maxWidth = 'none';
+                });
+                this.innerHTML = '<i class="fas fa-compress-alt"></i>';
+                this.setAttribute('data-expanded', 'true');
+                this.setAttribute('title', 'Truncate URLs');
+            }
+
+            // Update tooltip
+            bootstrap.Tooltip.getInstance(this).dispose();
+            new bootstrap.Tooltip(this);
+        });
     }
 
     function displayFinalSummary(stats) {
@@ -685,130 +550,47 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('export-btn').addEventListener('click', exportToCSV);
     }
 
-    // Function to fetch with multiple CORS proxy fallbacks
-    async function fetchWithProxy(url) {
-        // Try different CORS proxies
-        const corsProxies = [
-            (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-            (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-            (url) => `https://cors-anywhere.herokuapp.com/${url}`,
-            (url) => `https://crossorigin.me/${url}`
-        ];
-
-        let lastError = null;
-
-        // Try each proxy
-        for (const proxyFn of corsProxies) {
-            try {
-                const proxyUrl = proxyFn(url);
-                console.log(`Trying proxy: ${proxyUrl}`);
-
-                const response = await fetch(proxyUrl, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 Website Image Alt Analyzer'
-                    }
-                });
-                if (!response.ok) {
-                    throw new Error(`Proxy returned status: ${response.status}`);
-                }
-
-                return await response.text();
-            } catch (error) {
-                console.warn(`Proxy failed:`, error);
-                lastError = error;
-                // Continue to the next proxy
-            }
-        }
-
-        // If we get here, all proxies failed
-        throw new Error(`All CORS proxies failed. Last error: ${lastError?.message || 'Unknown error'}`);
-    }
-
-    function exportToCSV() {
-        const rows = Array.from(resultsBody.getElementsByTagName('tr'));
-        let csvContent = "data:text/csv;charset=utf-8,";
-
-        // Add headers
-        csvContent += "Index,Page URL,Image URL,Alt Text\n";
-
-        rows.forEach(row => {
-            const cells = row.getElementsByTagName('td');
-            const index = cells[0].textContent;
-            const pageUrl = cells[1].querySelector('a').href;
-            const imgSrc = cells[2].querySelector('img').src;
-            let altText = cells[3].textContent.trim();
-
-            // Handle the case where alt text is "Missing Alt Text"
-            if (altText === "Missing Alt Text") {
-                altText = "";
-            }
-
-            // Escape any quotes in the alt text
-            altText = altText.replace(/"/g, '""');
-
-            // Add row to CSV
-            csvContent += `${index},"${pageUrl}","${imgSrc}","${altText}"\n`;
-        });
-
-        // Create download link
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement('a');
-        link.setAttribute('href', encodedUri);
-        link.setAttribute('download', 'image-alt-analysis.csv');
-        document.body.appendChild(link);
-
-        // Trigger download
-        link.click();
-
-        // Clean up
-        document.body.removeChild(link);
-    }
-
     function updateProgress(percent) {
         progressBar.style.width = `${percent}%`;
+        progressBar.setAttribute('aria-valuenow', percent);
     }
 
     function resetResults() {
         resultsBody.innerHTML = '';
-        summary.style.display = 'none';
         resultsTable.style.display = 'none';
+        summary.style.display = 'none';
+        loading.style.display = 'none';
         progressBar.style.width = '0%';
     }
 
-    // Add this to your script right after you set up the table headers
-    function setupUrlToggle() {
-        // Create toggle button and add it to the header
-        const urlHeader = resultsTable.querySelector('thead th:nth-child(2)');
-        if (urlHeader) {
-            urlHeader.innerHTML = `
-                Page URL
-                <button id="toggle-urls" class="btn btn-sm btn-outline-secondary ms-2" title="Toggle URL display">
-                    <i class="fas fa-expand-alt"></i>
-                </button>
-            `;
+    function exportToCSV() {
+        const rows = [];
 
-            // Add event listener for toggle
-            document.getElementById('toggle-urls').addEventListener('click', function() {
-                const urlCells = document.querySelectorAll('.page-url');
-                const isExpanded = this.getAttribute('data-expanded') === 'true';
+        // Add headers
+        rows.push(['#', 'Page URL', 'Image URL', 'Alt Text', 'Status']);
 
-                if (isExpanded) {
-                    // Collapse URLs
-                    urlCells.forEach(cell => {
-                        cell.style.maxWidth = '300px';
-                    });
-                    this.innerHTML = '<i class="fas fa-expand-alt"></i>';
-                    this.setAttribute('data-expanded', 'false');
-                } else {
-                    // Expand URLs
-                    urlCells.forEach(cell => {
-                        cell.style.maxWidth = 'none';
-                    });
-                    this.innerHTML = '<i class="fas fa-compress-alt"></i>';
-                    this.setAttribute('data-expanded', 'true');
-                }
-            });
-        }
+        // Add data
+        document.querySelectorAll('#results-body tr').forEach((row, index) => {
+            const cols = row.querySelectorAll('td');
+            const pageUrl = cols[1].querySelector('a').getAttribute('href');
+            const imgSrc = cols[2].querySelector('img').getAttribute('src');
+            const altText = cols[3].textContent.trim();
+            const status = altText === 'Missing Alt Text' ? 'Missing' : 'OK';
+
+            rows.push([index + 1, pageUrl, imgSrc, altText, status]);
+        });
+
+        // Convert to CSV
+        let csvContent = "data:text/csv;charset=utf-8,"
+            + rows.map(e => e.map(item => `"${(item || '').toString().replace(/"/g, '""')}"`).join(",")).join("\n");
+
+        // Download
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "image-alt-analysis.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 });
