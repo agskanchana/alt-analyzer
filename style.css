@@ -111,3 +111,32 @@ body {
 #results-table th:nth-child(4) {
     width: 40%;
 }
+
+/* Styles for duplicate images */
+.duplicate-image {
+    position: relative;
+    background-color: #fff8e1 !important; /* Light yellow background */
+}
+
+.badge.bg-warning {
+    font-size: 0.75rem;
+    vertical-align: middle;
+}
+
+#filter-options {
+    transition: all 0.3s ease;
+}
+
+.form-switch .form-check-input {
+    width: 2em;
+}
+
+#search-results {
+    padding-right: 2.5rem;
+}
+
+#clear-search {
+    position: absolute;
+    right: 0;
+    z-index: 3;
+}

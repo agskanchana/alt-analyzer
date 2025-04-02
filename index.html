@@ -22,69 +22,36 @@
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-body">
-                        <ul class="nav nav-tabs" id="analysisType" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="sitemap-tab" data-bs-toggle="tab"
-                                        data-bs-target="#sitemap-content" type="button" role="tab">
-                                    <i class="fas fa-sitemap me-2"></i>Analyze by Sitemap
-                                </button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="crawler-tab" data-bs-toggle="tab"
-                                        data-bs-target="#crawler-content" type="button" role="tab">
-                                    <i class="fas fa-spider me-2"></i>Crawl Website
-                                </button>
-                            </li>
-                        </ul>
-
-                        <div class="tab-content mt-3" id="analysisTabContent">
-                            <!-- Sitemap Tab -->
-                            <div class="tab-pane fade" id="sitemap-content" role="tabpanel">
-                                <h5 class="card-title">Enter Sitemap URL</h5>
-                                <div class="mb-3">
-                                    <input type="url" class="form-control" id="sitemap-url"
-                                        placeholder="https://example.com/sitemap.xml">
-                                </div>
-                                <button class="btn btn-primary" id="analyze-sitemap-btn">
-                                    <i class="fas fa-search me-2"></i>
-                                    Analyze Images via Sitemap
-                                </button>
+                        <h5 class="card-title">Enter Website URL</h5>
+                        <div class="mb-3">
+                            <input type="url" class="form-control" id="website-url"
+                                placeholder="https://example.com/">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Crawler Settings</label>
+                            <div class="input-group mb-2">
+                                <span class="input-group-text">Max Pages</span>
+                                <input type="number" class="form-control" id="max-pages" value="200" min="1" max="500">
+                                <span class="input-group-text">Max Depth</span>
+                                <input type="number" class="form-control" id="max-depth" value="10" min="1" max="10">
                             </div>
-
-                            <!-- Crawler Tab -->
-                            <div class="tab-pane fade show active" id="crawler-content" role="tabpanel">
-                                <h5 class="card-title">Enter Website URL</h5>
-                                <div class="mb-3">
-                                    <input type="url" class="form-control" id="website-url"
-                                        placeholder="https://example.com/">
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Crawler Settings</label>
-                                    <div class="input-group mb-2">
-                                        <span class="input-group-text">Max Pages</span>
-                                        <input type="number" class="form-control" id="max-pages" value="200" min="1" max="500">
-                                        <span class="input-group-text">Max Depth</span>
-                                        <input type="number" class="form-control" id="max-depth" value="10" min="1" max="10">
-                                    </div>
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="checkbox" id="stay-on-domain" checked>
-                                        <label class="form-check-label" for="stay-on-domain">
-                                            Stay on same domain
-                                        </label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" id="include-external-images">
-                                        <label class="form-check-label" for="include-external-images">
-                                            Include externally hosted images
-                                        </label>
-                                    </div>
-                                </div>
-                                <button class="btn btn-primary" id="crawl-site-btn">
-                                    <i class="fas fa-spider me-2"></i>
-                                    Crawl Website for Images
-                                </button>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="stay-on-domain" checked>
+                                <label class="form-check-label" for="stay-on-domain">
+                                    Stay on same domain
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="include-external-images">
+                                <label class="form-check-label" for="include-external-images">
+                                    Include externally hosted images
+                                </label>
                             </div>
                         </div>
+                        <button class="btn btn-primary" id="crawl-site-btn">
+                            <i class="fas fa-spider me-2"></i>
+                            Crawl Website for Images
+                        </button>
                     </div>
                 </div>
             </div>
@@ -106,12 +73,52 @@
                 <h4>Summary</h4>
                 <div id="summary-content"></div>
             </div>
+
+            <!-- New Result Filtering Options -->
+            <div id="filter-options" class="card mb-3" style="display: none;">
+                <div class="card-body">
+                    <h5 class="card-title">Filter Results</h5>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="hide-duplicates">
+                                <label class="form-check-label" for="hide-duplicates">
+                                    <i class="fas fa-copy me-1"></i> Hide duplicate images (same src URL and alt text)
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="only-missing-alt">
+                                <label class="form-check-label" for="only-missing-alt">
+                                    <i class="fas fa-exclamation-triangle text-danger me-1"></i> Show only images missing alt text
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-12 mt-2">
+                            <div class="input-group">
+                                <span class="input-group-text">
+                                    <i class="fas fa-search"></i>
+                                </span>
+                                <input type="text" class="form-control" id="search-results" placeholder="Search in URLs or alt text...">
+                                <button class="btn btn-outline-secondary" type="button" id="clear-search">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <div class="form-text">Search is case-insensitive and matches partial text</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="table-responsive results-table">
                 <table class="table table-striped table-bordered" id="results-table" style="display: none;">
                     <thead>
                         <tr>
                             <th>#</th>
-                            <th>Page URL</th>
+                            <th>Page URL <button id="toggle-urls" class="btn btn-sm btn-outline-secondary ms-2" title="Toggle URL display">
+                                <i class="fas fa-expand-alt"></i>
+                            </button></th>
                             <th>Image</th>
                             <th>Alt Text</th>
                         </tr>

@@ -1,4 +1,3 @@
-// Initialize tooltips
 document.addEventListener('DOMContentLoaded', function() {
     // Enable tooltips everywhere
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
@@ -7,13 +6,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Your existing elements
-    const sitemapUrlInput = document.getElementById('sitemap-url');
     const websiteUrlInput = document.getElementById('website-url');
     const maxPagesInput = document.getElementById('max-pages');
     const maxDepthInput = document.getElementById('max-depth');
     const stayOnDomainCheckbox = document.getElementById('stay-on-domain');
     const includeExternalImagesCheckbox = document.getElementById('include-external-images');
-    const analyzeSitemapBtn = document.getElementById('analyze-sitemap-btn');
     const crawlSiteBtn = document.getElementById('crawl-site-btn');
     const loading = document.getElementById('loading');
     const loadingText = document.getElementById('loading-text');
@@ -24,37 +21,28 @@ document.addEventListener('DOMContentLoaded', function() {
     const resultsTable = document.getElementById('results-table');
     const resultsBody = document.getElementById('results-body');
 
+    // Filter elements
+    const filterOptions = document.getElementById('filter-options');
+    const hideDuplicatesCheckbox = document.getElementById('hide-duplicates');
+    const onlyMissingAltCheckbox = document.getElementById('only-missing-alt');
+    const searchResultsInput = document.getElementById('search-results');
+    const clearSearchBtn = document.getElementById('clear-search');
+
     // Track visited URLs for crawler
     let visitedUrls = new Set();
     let urlQueue = [];
-    let currentDepth = 0;
     let maxDepth = 3;
     let maxPages = 50;
     let baseDomain = '';
     let includeExternalImages = false;
     let shouldStayOnDomain = true;
 
+    // Track all images and duplicates
+    let allImages = [];
+    let duplicateTracker = new Set();
+
     // PHP API endpoint
     const API_ENDPOINT = 'api.php';
-
-    // Sitemap analysis button click handler
-    analyzeSitemapBtn.addEventListener('click', function() {
-        const sitemapUrl = sitemapUrlInput.value.trim();
-
-        if (!sitemapUrl) {
-            alert('Please enter a sitemap URL');
-            return;
-        }
-
-        if (!sitemapUrl.match(/https?:\/\/.+\.xml$/i)) {
-            alert('Please enter a valid XML sitemap URL');
-            return;
-        }
-
-        // Reset and start analysis
-        resetResults();
-        startSitemapAnalysis(sitemapUrl);
-    });
 
     // Website crawl button click handler
     crawlSiteBtn.addEventListener('click', function() {
@@ -90,130 +78,30 @@ document.addEventListener('DOMContentLoaded', function() {
         startWebsiteCrawl(websiteUrl);
     });
 
-    // Function to fetch a sitemap and get URLs
-    async function fetchSitemapUrls(sitemapUrl) {
-        try {
-            const response = await fetch(`${API_ENDPOINT}?action=sitemap&url=${encodeURIComponent(sitemapUrl)}`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const data = await response.json();
+    // Filter change handlers
+    hideDuplicatesCheckbox.addEventListener('change', applyFilters);
+    onlyMissingAltCheckbox.addEventListener('change', applyFilters);
 
-            if (data.error) {
-                throw new Error(data.error + (data.message ? `: ${data.message}` : ''));
-            }
+    // Search functionality
+    let searchTimeout;
+    searchResultsInput.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(applyFilters, 300);
+    });
 
-            return data.urls || [];
-        } catch (error) {
-            console.error(`Error fetching sitemap ${sitemapUrl}:`, error);
-            throw error;
-        }
-    }
-
-    // Sitemap analysis function
-    async function startSitemapAnalysis(sitemapUrl) {
-        try {
-            // Show loading
-            loading.style.display = 'block';
-            loadingText.textContent = "Analyzing sitemap...";
-
-            // Update the summary
-            summary.style.display = 'block';
-            summaryContent.innerHTML = `<p>Analyzing sitemap: ${sitemapUrl}</p>`;
-
-            updateProgress(10);
-
-            // Fetch and parse the sitemap
-            const sitemapData = await fetch(`${API_ENDPOINT}?action=sitemap&url=${encodeURIComponent(sitemapUrl)}`)
-                .then(response => response.json());
-
-            if (sitemapData.error) {
-                throw new Error(sitemapData.error + (sitemapData.message ? `: ${sitemapData.message}` : ''));
-            }
-
-            updateProgress(20);
-
-            let pageUrls = [];
-
-            if (sitemapData.type === 'sitemapindex') {
-                // This is a sitemap index
-                summaryContent.innerHTML = `<p>Found ${sitemapData.urls.length} sitemaps in the index.</p>`;
-
-                // Process each sitemap in the index
-                for (let i = 0; i < sitemapData.urls.length; i++) {
-                    const subSitemapUrl = sitemapData.urls[i];
-                    updateProgress(20 + (i / sitemapData.urls.length) * 30);
-                    loadingText.textContent = `Processing sitemap ${i + 1} of ${sitemapData.urls.length}...`;
-
-                    try {
-                        const subSitemapUrls = await fetchSitemapUrls(subSitemapUrl);
-                        pageUrls = pageUrls.concat(subSitemapUrls);
-                    } catch (error) {
-                        console.error(`Error processing sub-sitemap ${subSitemapUrl}:`, error);
-                    }
-                }
-            } else if (sitemapData.type === 'urlset') {
-                // This is a regular sitemap
-                pageUrls = sitemapData.urls;
-            } else {
-                throw new Error('Unknown sitemap format');
-            }
-
-            // Remove duplicates
-            pageUrls = [...new Set(pageUrls)];
-
-            updateProgress(50);
-            summaryContent.innerHTML = `<p>Found ${pageUrls.length} unique URLs in the sitemap(s).</p>
-                                      <p>Now checking each page for images...</p>`;
-
-            // Set up the table headers
-            const thead = resultsTable.querySelector('thead');
-            thead.innerHTML = `
-                <tr>
-                    <th>#</th>
-                    <th>Page URL <button id="toggle-urls" class="btn btn-sm btn-outline-secondary ms-2" title="Toggle URL display">
-                        <i class="fas fa-expand-alt"></i>
-                    </button></th>
-                    <th>Image</th>
-                    <th>Alt Text</th>
-                </tr>
-            `;
-
-            // Show the table - we'll populate it as we go
-            resultsTable.style.display = 'table';
-
-            // Set up the URL toggle functionality
-            setupUrlToggle();
-
-            // Initialize counters for images
-            let imageStats = {
-                total: 0,
-                missing: 0,
-                pages: 0
-            };
-
-            // Process each URL to check for images and alt tags
-            await processUrlsForImages(pageUrls, imageStats);
-
-            // Display final summary
-            displayFinalSummary(imageStats);
-
-            // Hide loading
-            loading.style.display = 'none';
-
-        } catch (error) {
-            console.error('Error analyzing sitemap:', error);
-            loading.style.display = 'none';
-            alert(`Error analyzing sitemap: ${error.message}`);
-        }
-    }
+    clearSearchBtn.addEventListener('click', function() {
+        searchResultsInput.value = '';
+        applyFilters();
+    });
 
     // Website crawling function
     async function startWebsiteCrawl(startUrl) {
         try {
-            // Reset crawler state
+            // Reset crawler state and image tracking
             visitedUrls = new Set();
             urlQueue = [];
+            allImages = [];
+            duplicateTracker = new Set();
 
             // Initialize crawl
             urlQueue.push({ url: startUrl, depth: 0 });
@@ -233,7 +121,8 @@ document.addEventListener('DOMContentLoaded', function() {
             let imageStats = {
                 total: 0,
                 missing: 0,
-                pages: 0
+                pages: 0,
+                duplicates: 0
             };
 
             // Update table header for image analysis
@@ -305,14 +194,37 @@ document.addEventListener('DOMContentLoaded', function() {
                             }
                         }
 
+                        // Create an image record with a unique fingerprint
+                        const fingerprint = `${image.src}|${image.alt || ''}`;
+                        const isDuplicate = duplicateTracker.has(fingerprint);
+
+                        if (isDuplicate) {
+                            imageStats.duplicates++;
+                        }
+
+                        duplicateTracker.add(fingerprint);
+
                         // Update stats
                         imageStats.total++;
                         if (image.hasMissingAlt) {
                             imageStats.missing++;
                         }
 
+                        // Store the image data with page URL and duplicate status
+                        const imageData = {
+                            index: imageStats.total,
+                            pageUrl: url,
+                            imgSrc: image.src,
+                            altText: image.alt || '',
+                            hasMissingAlt: image.hasMissingAlt,
+                            isDuplicate: isDuplicate,
+                            fingerprint: fingerprint
+                        };
+
+                        allImages.push(imageData);
+
                         // Add to results table
-                        addImageResult(url, image.src, image.alt, imageStats.total);
+                        addImageResultToTable(imageData);
                     }
 
                     // Only continue crawling if we're not at max depth
@@ -360,6 +272,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // Display final summary
             displayFinalSummary(imageStats);
 
+            // Show filter options
+            filterOptions.style.display = 'block';
+
             // Hide loading
             loading.style.display = 'none';
 
@@ -370,81 +285,45 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Function to process a batch of URLs and check for images
-    async function processUrlsForImages(urls, stats) {
-        // Process URLs in smaller batches to avoid overloading
-        const batchSize = 5;
-
-        for (let i = 0; i < urls.length; i += batchSize) {
-            const batch = urls.slice(i, i + batchSize);
-
-            // Update progress
-            updateProgress(50 + (i / urls.length) * 50);
-            loadingText.textContent = `Analyzing page ${i + 1} to ${Math.min(i + batchSize, urls.length)} of ${urls.length}...`;
-
-            // Process the batch in parallel
-            await Promise.all(batch.map(async url => {
-                try {
-                    // Use the PHP backend to analyze the page
-                    const response = await fetch(`${API_ENDPOINT}?action=analyze-page&url=${encodeURIComponent(url)}`);
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-
-                    const pageData = await response.json();
-
-                    if (pageData.error) {
-                        throw new Error(pageData.error + (pageData.message ? `: ${pageData.message}` : ''));
-                    }
-
-                    // Process images from this page
-                    for (const image of pageData.images) {
-                        // Update stats
-                        stats.total++;
-                        if (image.hasMissingAlt) {
-                            stats.missing++;
-                        }
-
-                        // Add to results table
-                        addImageResult(url, image.src, image.alt, stats.total);
-                    }
-
-                    stats.pages++;
-                } catch (error) {
-                    console.error(`Error processing ${url}:`, error);
-                }
-            }));
-        }
-    }
-
     // Function to add an image result to the table
-    function addImageResult(pageUrl, imgSrc, altText, index) {
+    function addImageResultToTable(imageData) {
         const row = document.createElement('tr');
 
-        // Determine if alt is missing
-        const isMissing = !altText;
+        // Store image data with the row for filtering
+        row.dataset.imgSrc = imageData.imgSrc;
+        row.dataset.altText = imageData.altText;
+        row.dataset.hasMissingAlt = imageData.hasMissingAlt;
+        row.dataset.isDuplicate = imageData.isDuplicate;
+        row.dataset.fingerprint = imageData.fingerprint;
 
-        // Set row class if alt is missing
-        if (isMissing) {
+        // Set classes for styling
+        if (imageData.hasMissingAlt) {
             row.className = 'table-danger';
         }
 
+        if (imageData.isDuplicate) {
+            row.classList.add('duplicate-image');
+        }
+
         row.innerHTML = `
-            <td>${index}</td>
+            <td>${imageData.index}</td>
             <td>
                 <div class="page-url">
-                    <a href="${pageUrl}" target="_blank" data-bs-toggle="tooltip" title="${pageUrl}">
-                        ${pageUrl}
+                    <a href="${imageData.pageUrl}" target="_blank" data-bs-toggle="tooltip" title="${imageData.pageUrl}">
+                        ${imageData.pageUrl}
                     </a>
                     <button class="btn btn-sm btn-outline-secondary ms-1 copy-url"
-                           data-bs-toggle="tooltip" title="Copy URL" data-url="${pageUrl}">
+                           data-bs-toggle="tooltip" title="Copy URL" data-url="${imageData.pageUrl}">
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
             </td>
-            <td><img src="${imgSrc}" class="img-thumbnail"
-                onerror="this.onerror=null; this.src='https://via.placeholder.com/150x75?text=Image+Not+Available'"></td>
-            <td>${isMissing ? '<span class="badge bg-danger">Missing Alt Text</span>' : altText}</td>
+            <td>
+                <img src="${imageData.imgSrc}" class="img-thumbnail"
+                    onerror="this.onerror=null; this.src='https://via.placeholder.com/150x75?text=Image+Not+Available'">
+                ${imageData.isDuplicate ? '<span class="badge bg-warning text-dark ms-2">Duplicate</span>' : ''}
+            </td>
+            <td>${imageData.hasMissingAlt ? '<span class="badge bg-danger">Missing Alt Text</span>' : imageData.altText}</td>
         `;
 
         resultsBody.appendChild(row);
@@ -481,6 +360,82 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Function to apply filters
+    function applyFilters() {
+        const hideDuplicates = hideDuplicatesCheckbox.checked;
+        const onlyMissingAlt = onlyMissingAltCheckbox.checked;
+        const searchTerm = searchResultsInput.value.toLowerCase();
+
+        // Count visible rows
+        let visibleCount = 0;
+
+        // Get all rows
+        const rows = resultsBody.querySelectorAll('tr');
+
+        rows.forEach(row => {
+            let shouldShow = true;
+
+            // Filter by duplicate status
+            if (hideDuplicates && row.dataset.isDuplicate === 'true') {
+                shouldShow = false;
+            }
+
+            // Filter by missing alt text
+            if (onlyMissingAlt && row.dataset.hasMissingAlt === 'false') {
+                shouldShow = false;
+            }
+
+            // Filter by search term
+            if (searchTerm && shouldShow) {
+                const imgSrc = row.dataset.imgSrc.toLowerCase();
+                const altText = row.dataset.altText.toLowerCase();
+                const pageUrl = row.querySelector('.page-url a').getAttribute('href').toLowerCase();
+
+                if (!imgSrc.includes(searchTerm) &&
+                    !altText.includes(searchTerm) &&
+                    !pageUrl.includes(searchTerm)) {
+                    shouldShow = false;
+                }
+            }
+
+            // Apply visibility
+            if (shouldShow) {
+                row.style.display = '';
+                visibleCount++;
+                // Update the index column for visible rows
+                row.querySelector('td:first-child').textContent = visibleCount;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        // Update the summary with filter info
+        const filterInfo = document.createElement('div');
+        filterInfo.className = 'mt-2 alert alert-secondary';
+
+        let filterText = `Showing ${visibleCount} of ${rows.length} images`;
+        const activeFilters = [];
+
+        if (hideDuplicates) activeFilters.push('hiding duplicates');
+        if (onlyMissingAlt) activeFilters.push('only missing alt text');
+        if (searchTerm) activeFilters.push(`matching "${searchTerm}"`);
+
+        if (activeFilters.length > 0) {
+            filterText += ` (${activeFilters.join(', ')})`;
+        }
+
+        filterInfo.textContent = filterText;
+
+        // Update the filter info in the summary
+        const existingFilterInfo = document.getElementById('filter-info');
+        if (existingFilterInfo) {
+            existingFilterInfo.replaceWith(filterInfo);
+        } else {
+            summaryContent.appendChild(filterInfo);
+        }
+        filterInfo.id = 'filter-info';
+    }
+
     function setupUrlToggle() {
         // Add event listener for toggle
         document.getElementById('toggle-urls').addEventListener('click', function() {
@@ -513,6 +468,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function displayFinalSummary(stats) {
         const missingPercent = stats.total > 0 ? Math.round((stats.missing / stats.total) * 100) : 0;
+        const duplicatePercent = stats.total > 0 ? Math.round((stats.duplicates / stats.total) * 100) : 0;
 
         summaryContent.innerHTML = `
             <div class="alert ${missingPercent > 30 ? 'alert-danger' : 'alert-info'}">
@@ -520,6 +476,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <p>Pages analyzed: <strong>${stats.pages}</strong></p>
                 <p>Total images found: <strong>${stats.total}</strong></p>
                 <p>Images missing alt text: <strong>${stats.missing}</strong> (${missingPercent}%)</p>
+                <p>Duplicate images: <strong>${stats.duplicates}</strong> (${duplicatePercent}%)</p>
                 <p>Images with alt text: <strong>${stats.total - stats.missing}</strong> (${100 - missingPercent}%)</p>
                 <div class="progress">
                     <div class="progress-bar bg-success" role="progressbar" style="width: ${100 - missingPercent}%"
@@ -542,7 +499,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <li><code>&lt;img data-original="image.jpg"&gt;</code></li>
                 </ul>
             </div>
-            <p>Images without alt text are highlighted in red.</p>
+            <p>Images without alt text are highlighted in red. Duplicate images are marked with a "Duplicate" badge.</p>
             <button class="btn btn-success" id="export-btn">Export to CSV</button>
         `;
 
@@ -559,25 +516,37 @@ document.addEventListener('DOMContentLoaded', function() {
         resultsBody.innerHTML = '';
         resultsTable.style.display = 'none';
         summary.style.display = 'none';
+        filterOptions.style.display = 'none';
         loading.style.display = 'none';
         progressBar.style.width = '0%';
+
+        // Reset filters
+        hideDuplicatesCheckbox.checked = false;
+        onlyMissingAltCheckbox.checked = false;
+        searchResultsInput.value = '';
     }
 
     function exportToCSV() {
         const rows = [];
 
         // Add headers
-        rows.push(['#', 'Page URL', 'Image URL', 'Alt Text', 'Status']);
+        rows.push(['#', 'Page URL', 'Image URL', 'Alt Text', 'Status', 'Duplicate']);
 
-        // Add data
+        // Add data - only export visible rows
         document.querySelectorAll('#results-body tr').forEach((row, index) => {
+            // Skip hidden rows
+            if (row.style.display === 'none') {
+                return;
+            }
+
             const cols = row.querySelectorAll('td');
             const pageUrl = cols[1].querySelector('a').getAttribute('href');
             const imgSrc = cols[2].querySelector('img').getAttribute('src');
-            const altText = cols[3].textContent.trim();
-            const status = altText === 'Missing Alt Text' ? 'Missing' : 'OK';
+            const altText = row.dataset.altText;
+            const status = row.dataset.hasMissingAlt === 'true' ? 'Missing' : 'OK';
+            const duplicate = row.dataset.isDuplicate === 'true' ? 'Yes' : 'No';
 
-            rows.push([index + 1, pageUrl, imgSrc, altText, status]);
+            rows.push([index + 1, pageUrl, imgSrc, altText, status, duplicate]);
         });
 
         // Convert to CSV

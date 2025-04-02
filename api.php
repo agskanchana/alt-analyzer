@@ -13,9 +13,6 @@ switch ($action) {
     case 'fetch':
         fetchUrl();
         break;
-    case 'sitemap':
-        parseSitemap();
-        break;
     case 'analyze-page':
         analyzePage();
         break;
@@ -70,83 +67,6 @@ function fetchUrl() {
     // Output the content directly (not as JSON)
     header('Content-Type: text/html; charset=utf-8');
     echo $content;
-}
-
-// Function to parse a sitemap
-function parseSitemap() {
-    $url = isset($_GET['url']) ? $_GET['url'] : '';
-
-    if (empty($url)) {
-        echo json_encode(['error' => 'URL parameter is required']);
-        return;
-    }
-
-    // Initialize cURL session
-    $ch = curl_init();
-
-    // Set cURL options
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Website Image Alt Analyzer');
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Accept: application/xml,text/xml',
-        'Accept-Language: en-US,en;q=0.9'
-    ]);
-
-    // Execute cURL session
-    $xml = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error = curl_error($ch);
-
-    // Close cURL session
-    curl_close($ch);
-
-    // Check for errors
-    if ($error) {
-        echo json_encode(['error' => 'Failed to fetch sitemap', 'message' => $error, 'url' => $url]);
-        return;
-    }
-
-    if ($httpCode >= 400) {
-        echo json_encode(['error' => 'HTTP error', 'code' => $httpCode, 'url' => $url]);
-        return;
-    }
-
-    // Load XML
-    $xmlObj = simplexml_load_string($xml);
-
-    if ($xmlObj === false) {
-        echo json_encode(['error' => 'Invalid XML', 'url' => $url]);
-        return;
-    }
-
-    // Check if it's a sitemap index or regular sitemap
-    $namespaces = $xmlObj->getNamespaces(true);
-    $urls = [];
-    $type = '';
-
-    // Check if this is a sitemap index
-    if ($xmlObj->getName() === 'sitemapindex') {
-        $type = 'sitemapindex';
-        foreach ($xmlObj->sitemap as $sitemap) {
-            $urls[] = (string)$sitemap->loc;
-        }
-    }
-    // Check if this is a regular sitemap
-    elseif ($xmlObj->getName() === 'urlset') {
-        $type = 'urlset';
-        foreach ($xmlObj->url as $url) {
-            $urls[] = (string)$url->loc;
-        }
-    }
-
-    echo json_encode([
-        'type' => $type,
-        'urls' => $urls
-    ]);
 }
 
 // Function to analyze a page for images
