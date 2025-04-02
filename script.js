@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', function() {
         startAnalysis(sitemapUrl);
     });
 
+    // Update the startAnalysis function
     async function startAnalysis(sitemapUrl) {
         try {
             // Show loading
@@ -36,34 +37,48 @@ document.addEventListener('DOMContentLoaded', function() {
             // Fetch the sitemap directly - we'll handle CORS another way
             const xmlText = await fetchWithProxy(sitemapUrl);
             console.log('Fetched XML content length:', xmlText.length);
+            console.log('XML content preview:', xmlText.substring(0, 500)); // Log a preview of the XML
 
             // Parse the XML
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
 
-            // Debug - log the parsed XML
+            // Debug - log the parsed XML and check for parsing errors
             console.log('Parsed XML document:', xmlDoc.documentElement.tagName);
+            const parsingError = xmlDoc.getElementsByTagName('parsererror');
+            if (parsingError.length > 0) {
+                throw new Error('XML parsing error: ' + parsingError[0].textContent);
+            }
 
-            // Detect the type of sitemap
-            const sitemapIndex = xmlDoc.getElementsByTagName('sitemapindex').length > 0;
-            const urlSet = xmlDoc.getElementsByTagName('urlset').length > 0;
+            // Define namespace
+            const ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
+
+            // Detect the type of sitemap using namespace-aware methods
+            const sitemapIndex = xmlDoc.getElementsByTagNameNS(ns, 'sitemapindex').length > 0;
+            const urlSet = xmlDoc.getElementsByTagNameNS(ns, 'urlset').length > 0;
+
+            console.log('Is sitemap index?', sitemapIndex);
+            console.log('Is regular sitemap?', urlSet);
 
             let pageUrls = [];
 
             if (sitemapIndex) {
                 // This is a sitemap index
                 console.log('Detected sitemap index');
-                const sitemapElements = xmlDoc.getElementsByTagName('sitemap');
+                const sitemapElements = xmlDoc.getElementsByTagNameNS(ns, 'sitemap');
+                console.log(`Found ${sitemapElements.length} sitemap elements`);
+
                 const locElements = [];
 
                 // Get all loc elements within sitemaps
                 for (let i = 0; i < sitemapElements.length; i++) {
-                    const locElement = sitemapElements[i].getElementsByTagName('loc');
+                    const locElement = sitemapElements[i].getElementsByTagNameNS(ns, 'loc');
                     if (locElement.length > 0) {
                         locElements.push(locElement[0]);
                     }
                 }
 
+                console.log(`Found ${locElements.length} location elements in sitemap index`);
                 summary.style.display = 'block';
                 summaryContent.innerHTML = `<p>Found ${locElements.length} sitemaps in the index.</p>`;
 
@@ -87,15 +102,26 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (urlSet) {
                 // This is a regular sitemap
                 console.log('Detected regular sitemap');
-                const urlElements = xmlDoc.getElementsByTagName('url');
+                const urlElements = xmlDoc.getElementsByTagNameNS(ns, 'url');
+                console.log(`Found ${urlElements.length} URL elements`);
 
                 for (let i = 0; i < urlElements.length; i++) {
-                    const locElements = urlElements[i].getElementsByTagName('loc');
+                    const locElements = urlElements[i].getElementsByTagNameNS(ns, 'loc');
                     if (locElements.length > 0) {
                         pageUrls.push(locElements[0].textContent.trim());
                     }
                 }
             } else {
+                // If we can't detect the format, try dump the XML structure
+                console.error('Could not identify sitemap format - neither sitemapindex nor urlset found');
+                console.log('Root element:', xmlDoc.documentElement.tagName);
+                console.log('Root children:', xmlDoc.documentElement.childNodes.length);
+                console.log('First few children tags:',
+                    Array.from(xmlDoc.documentElement.childNodes)
+                        .filter(node => node.nodeType === 1)
+                        .slice(0, 5)
+                        .map(node => node.tagName)
+                );
                 throw new Error('Could not identify sitemap format - neither sitemapindex nor urlset found');
             }
 
@@ -149,27 +175,39 @@ document.addEventListener('DOMContentLoaded', function() {
     async function fetchSitemapUrls(sitemapUrl) {
         try {
             // Fetch the sitemap
+            console.log('Fetching sub-sitemap:', sitemapUrl);
             const xmlText = await fetchWithProxy(sitemapUrl);
+            console.log(`Fetched sub-sitemap content length: ${xmlText.length}`);
 
             // Parse the XML
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
 
+            // Check for parsing errors
+            const parsingError = xmlDoc.getElementsByTagName('parsererror');
+            if (parsingError.length > 0) {
+                console.error('XML parsing error in sub-sitemap:', parsingError[0].textContent);
+                return [];
+            }
+
+            // Define namespace
+            const ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
+
             // Extract URLs
             const urls = [];
-            const urlElements = xmlDoc.getElementsByTagName('url');
+            const urlElements = xmlDoc.getElementsByTagNameNS(ns, 'url');
+            console.log(`Found ${urlElements.length} URLs in sub-sitemap`);
 
             for (let i = 0; i < urlElements.length; i++) {
-                const locElements = urlElements[i].getElementsByTagName('loc');
+                const locElements = urlElements[i].getElementsByTagNameNS(ns, 'loc');
                 if (locElements.length > 0) {
                     urls.push(locElements[0].textContent.trim());
                 }
             }
 
             return urls;
-
         } catch (error) {
-            console.error('Error fetching sub-sitemap:', error);
+            console.error('Error fetching sub-sitemap:', error, sitemapUrl);
             return [];
         }
     }
@@ -201,26 +239,45 @@ document.addEventListener('DOMContentLoaded', function() {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
 
-            // Find all images
+            // Find all images - both regular and lazy-loaded ones
             const images = doc.getElementsByTagName('img');
-            console.log(`Found ${images.length} images on ${url}`);
+            console.log(`Found ${images.length} image elements on ${url}`);
 
             // Process each image
+            let processedImages = 0;
             for (let i = 0; i < images.length; i++) {
                 const img = images[i];
-                const src = img.getAttribute('src');
+
+                // Check for regular src or data-src (used by many lazyload implementations)
+                let src = img.getAttribute('src');
+
+                // If no src or it's a tiny placeholder, look for data-src or other common lazy load attributes
+                if (!src || src.startsWith('data:') || src.includes('blank.gif') || src.includes('placeholder')) {
+                    // Check common lazy load attribute patterns
+                    const dataSrc = img.getAttribute('data-src') ||
+                                    img.getAttribute('data-lazy-src') ||
+                                    img.getAttribute('data-original') ||
+                                    img.getAttribute('lazy-src');
+
+                    if (dataSrc) {
+                        src = dataSrc;
+                        console.log(`Found lazy-loaded image with data-src: ${dataSrc}`);
+                    }
+                }
+
                 const alt = img.getAttribute('alt');
 
-                // Skip tiny images or icons
+                // Skip tiny images or icons by checking attributes
                 const width = parseInt(img.getAttribute('width') || '0');
                 const height = parseInt(img.getAttribute('height') || '0');
 
                 if ((width > 0 && width < 50) || (height > 0 && height < 50)) {
+                    console.log(`Skipping small image: ${src} (${width}x${height})`);
                     continue;
                 }
 
-                // Skip if no src or data URI
-                if (!src || src.startsWith('data:')) {
+                // Skip if no src or data URI after checking for lazy load attributes
+                if (!src || src.startsWith('data:') || src.length < 5) {
                     continue;
                 }
 
@@ -233,6 +290,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     continue;
                 }
 
+                processedImages++;
+
                 // Update stats
                 stats.total++;
                 if (!alt) {
@@ -242,6 +301,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Add to results table
                 addImageResult(url, imgUrl, alt || '', stats.total);
             }
+
+            console.log(`Processed ${processedImages} total images on ${url}`);
         } catch (error) {
             console.error(`Error processing ${url}:`, error);
         }
@@ -293,6 +354,16 @@ document.addEventListener('DOMContentLoaded', function() {
                         ${missingPercent}%
                     </div>
                 </div>
+            </div>
+            <div class="alert alert-info mt-3">
+                <h5>About Lazy-loaded Images</h5>
+                <p>This tool detects both standard images and lazy-loaded images that use data-src and similar attributes.</p>
+                <p>Common lazy-loading patterns detected:</p>
+                <ul>
+                    <li><code>&lt;img data-src="image.jpg" class="lazyload"&gt;</code></li>
+                    <li><code>&lt;img data-lazy-src="image.jpg"&gt;</code></li>
+                    <li><code>&lt;img data-original="image.jpg"&gt;</code></li>
+                </ul>
             </div>
             <p>Images without alt text are highlighted in red.</p>
             <button class="btn btn-success" id="export-btn">Export to CSV</button>
