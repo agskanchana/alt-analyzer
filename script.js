@@ -1,7 +1,22 @@
+// Initialize tooltips
 document.addEventListener('DOMContentLoaded', function() {
+    // Enable tooltips everywhere
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+
+    // Rest of your code...
     const sitemapUrlInput = document.getElementById('sitemap-url');
-    const analyzeBtn = document.getElementById('analyze-btn');
+    const websiteUrlInput = document.getElementById('website-url');
+    const maxPagesInput = document.getElementById('max-pages');
+    const maxDepthInput = document.getElementById('max-depth');
+    const stayOnDomainCheckbox = document.getElementById('stay-on-domain');
+    const includeExternalImagesCheckbox = document.getElementById('include-external-images');
+    const analyzeSitemapBtn = document.getElementById('analyze-sitemap-btn');
+    const crawlSiteBtn = document.getElementById('crawl-site-btn');
     const loading = document.getElementById('loading');
+    const loadingText = document.getElementById('loading-text');
     const progressBar = document.getElementById('progress-bar');
     const results = document.getElementById('results');
     const summary = document.getElementById('summary');
@@ -9,7 +24,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const resultsTable = document.getElementById('results-table');
     const resultsBody = document.getElementById('results-body');
 
-    analyzeBtn.addEventListener('click', function() {
+    // Track visited URLs for crawler
+    let visitedUrls = new Set();
+    let urlQueue = [];
+    let currentDepth = 0;
+    let maxDepth = 3;
+    let maxPages = 50;
+    let baseDomain = '';
+    let includeExternalImages = false;
+    let shouldStayOnDomain = true;
+
+    // Sitemap analysis button click handler
+    analyzeSitemapBtn.addEventListener('click', function() {
         const sitemapUrl = sitemapUrlInput.value.trim();
 
         if (!sitemapUrl) {
@@ -24,11 +50,46 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Reset and start analysis
         resetResults();
-        startAnalysis(sitemapUrl);
+        startSitemapAnalysis(sitemapUrl);
     });
 
-    // Update the startAnalysis function
-    async function startAnalysis(sitemapUrl) {
+    // Website crawl button click handler
+    crawlSiteBtn.addEventListener('click', function() {
+        const websiteUrl = websiteUrlInput.value.trim();
+
+        if (!websiteUrl) {
+            alert('Please enter a website URL');
+            return;
+        }
+
+        if (!websiteUrl.match(/^https?:\/\//i)) {
+            alert('Please enter a valid website URL starting with http:// or https://');
+            return;
+        }
+
+        // Get crawler settings
+        maxPages = parseInt(maxPagesInput.value) || 50;
+        maxDepth = parseInt(maxDepthInput.value) || 3;
+        shouldStayOnDomain = stayOnDomainCheckbox.checked;
+        includeExternalImages = includeExternalImagesCheckbox.checked;
+
+        // Extract base domain for filtering
+        try {
+            const url = new URL(websiteUrl);
+            baseDomain = url.hostname;
+        } catch (e) {
+            alert('Invalid URL format');
+            return;
+        }
+
+        // Reset and start crawling
+        resetResults();
+        startWebsiteCrawl(websiteUrl);
+    });
+
+    // Original sitemap analysis function (keep this as-is)
+    async function startSitemapAnalysis(sitemapUrl) {
+        loadingText.textContent = "Analyzing sitemap...";
         try {
             // Show loading
             loading.style.display = 'block';
@@ -141,7 +202,9 @@ document.addEventListener('DOMContentLoaded', function() {
             thead.innerHTML = `
                 <tr>
                     <th>#</th>
-                    <th>Page URL</th>
+                    <th>Page URL <button id="toggle-urls" class="btn btn-sm btn-outline-secondary ms-2" title="Toggle URL display">
+                        <i class="fas fa-expand-alt"></i>
+                    </button></th>
                     <th>Image</th>
                     <th>Alt Text</th>
                 </tr>
@@ -149,6 +212,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Show the table - we'll populate it as we go
             resultsTable.style.display = 'table';
+
+            // Set up the URL toggle functionality
+            setupUrlToggle();
 
             // Initialize counters for images
             let imageStats = {
@@ -169,6 +235,194 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Error analyzing sitemap:', error);
             loading.style.display = 'none';
             alert(`Error analyzing sitemap: ${error.message}`);
+        }
+    }
+
+    // New website crawling function
+    async function startWebsiteCrawl(startUrl) {
+        try {
+            // Reset crawler state
+            visitedUrls = new Set();
+            urlQueue = [];
+            currentDepth = 0;
+
+            // Initialize crawl
+            urlQueue.push({ url: startUrl, depth: 0 });
+
+            // Show loading
+            loading.style.display = 'block';
+            loadingText.textContent = "Crawling website...";
+            console.log('Starting crawl from:', startUrl);
+
+            // Update the summary
+            summary.style.display = 'block';
+            summaryContent.innerHTML = `<p>Crawling website starting at ${startUrl}</p>
+                                      <p>Settings: Max pages: ${maxPages}, Max depth: ${maxDepth},
+                                      Stay on domain: ${shouldStayOnDomain}</p>`;
+
+            // Initialize counters for images
+            let imageStats = {
+                total: 0,
+                missing: 0,
+                pages: 0
+            };
+
+            // Update table header for image analysis
+            const thead = resultsTable.querySelector('thead');
+            thead.innerHTML = `
+                <tr>
+                    <th>#</th>
+                    <th>Page URL <button id="toggle-urls" class="btn btn-sm btn-outline-secondary ms-2" title="Toggle URL display">
+                        <i class="fas fa-expand-alt"></i>
+                    </button></th>
+                    <th>Image</th>
+                    <th>Alt Text</th>
+                </tr>
+            `;
+
+            // Show the table - we'll populate it as we go
+            resultsTable.style.display = 'table';
+
+            // Set up the URL toggle functionality
+            setupUrlToggle();
+
+            // Process the queue
+            let urlsProcessed = 0;
+
+            while (urlQueue.length > 0 && urlsProcessed < maxPages) {
+                const current = urlQueue.shift();
+                const url = current.url;
+                const depth = current.depth;
+
+                // Skip if we've already visited this URL
+                if (visitedUrls.has(url)) {
+                    continue;
+                }
+
+                visitedUrls.add(url);
+                urlsProcessed++;
+                imageStats.pages++;
+
+                // Update progress
+                updateProgress((urlsProcessed / maxPages) * 100);
+                loadingText.textContent = `Crawling page ${urlsProcessed}/${maxPages}...`;
+
+                console.log(`Crawling [${depth}] ${url} (${urlsProcessed}/${maxPages})`);
+
+                try {
+                    // Process this page for images
+                    const imagesFound = await processUrl(url, imageStats);
+
+                    // Only continue crawling if we're not at max depth
+                    if (depth < maxDepth) {
+                        // Get links from the page and add them to the queue
+                        const newUrls = await extractLinksFromPage(url, depth);
+
+                        // Add new URLs to the queue
+                        urlQueue.push(...newUrls.map(newUrl => ({
+                            url: newUrl,
+                            depth: depth + 1
+                        })));
+                    }
+                } catch (error) {
+                    console.error(`Error processing ${url}:`, error);
+                }
+            }
+
+            // Display final summary
+            displayFinalSummary(imageStats);
+
+            // Hide loading
+            loading.style.display = 'none';
+
+        } catch (error) {
+            console.error('Error during website crawl:', error);
+            loading.style.display = 'none';
+            alert(`Error during website crawl: ${error.message}`);
+        }
+    }
+
+    // Add this function to help debug crawler issues
+    function logCrawlerStatus(message, data = null) {
+        const timestamp = new Date().toLocaleTimeString();
+        console.log(`[${timestamp}] CRAWLER: ${message}`);
+        if (data) {
+            console.log(data);
+        }
+    }
+
+    // Enhance extractLinksFromPage with better debugging
+    async function extractLinksFromPage(url, currentDepth) {
+        try {
+            logCrawlerStatus(`Extracting links from ${url} at depth ${currentDepth}`);
+
+            // Fetch the page
+            const html = await fetchWithProxy(url);
+            logCrawlerStatus(`Fetched HTML (${html.length} bytes)`);
+
+            // Parse the HTML
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+
+            // Find all links
+            const links = doc.getElementsByTagName('a');
+            logCrawlerStatus(`Found ${links.length} links on page`);
+
+            const newUrls = [];
+
+            for (let i = 0; i < links.length; i++) {
+                const href = links[i].getAttribute('href');
+
+                // Skip empty links, anchors, javascript, etc.
+                if (!href || href.startsWith('#') || href.startsWith('javascript:') ||
+                    href.startsWith('mailto:') || href.startsWith('tel:')) {
+                    continue;
+                }
+
+                try {
+                    // Normalize URL
+                    const absoluteUrl = new URL(href, url).href;
+
+                    // Skip if we've already visited or queued this URL
+                    if (visitedUrls.has(absoluteUrl) || urlQueue.some(item => item.url === absoluteUrl)) {
+                        continue;
+                    }
+
+                    // Check if we should stay on the same domain
+                    if (shouldStayOnDomain) {
+                        const linkDomain = new URL(absoluteUrl).hostname;
+                        if (linkDomain !== baseDomain) {
+                            logCrawlerStatus(`Skipping external domain: ${linkDomain} !== ${baseDomain}`);
+                            continue;
+                        }
+                    }
+
+                    // Skip non-HTML resources
+                    const fileExtension = absoluteUrl.split('?')[0].split('#')[0].split('.').pop().toLowerCase();
+                    const nonHtmlExtensions = [
+                        'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'ico',
+                        'css', 'js', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'zip', 'rar', 'exe',
+                        'mp3', 'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm'
+                    ];
+
+                    if (nonHtmlExtensions.includes(fileExtension)) {
+                        continue;
+                    }
+
+                    newUrls.push(absoluteUrl);
+                    logCrawlerStatus(`Added URL to queue: ${absoluteUrl}`);
+
+                } catch (e) {
+                    // Skip invalid URLs
+                    logCrawlerStatus(`Invalid URL: ${href} on page ${url}`, e);
+                }
+            }
+
+            logCrawlerStatus(`Extracted ${newUrls.length} new URLs to crawl`);
+            return newUrls;
+        } catch (error) {
+            logCrawlerStatus(`Error extracting links from ${url}:`, error);
+            return [];
         }
     }
 
@@ -285,6 +539,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 let imgUrl;
                 try {
                     imgUrl = new URL(src, url).href;
+
+                    // Check if we should include external images
+                    if (!includeExternalImages) {
+                        const imgDomain = new URL(imgUrl).hostname;
+                        if (imgDomain !== baseDomain) {
+                            console.log(`Skipping external image: ${imgUrl}`);
+                            continue;
+                        }
+                    }
                 } catch (e) {
                     console.warn(`Invalid image URL: ${src} on page ${url}`);
                     continue;
@@ -303,8 +566,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             console.log(`Processed ${processedImages} total images on ${url}`);
+            return processedImages;
         } catch (error) {
             console.error(`Error processing ${url}:`, error);
+            return 0;
         }
     }
 
@@ -319,15 +584,61 @@ document.addEventListener('DOMContentLoaded', function() {
             row.className = 'table-danger';
         }
 
+        // Create a URL object to extract parts
+        let urlDisplay;
+        try {
+            const urlObj = new URL(pageUrl);
+            const domain = urlObj.hostname;
+            const path = urlObj.pathname;
+
+            urlDisplay = `
+                <div class="page-url">
+                    <a href="${pageUrl}" target="_blank" class="" title="${pageUrl}">
+                        ${pageUrl}
+                    </a>
+                    <button class="btn btn-sm btn-outline-secondary ms-1 copy-url" title="Copy URL" data-url="${pageUrl}">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+            `;
+        } catch (e) {
+            urlDisplay = `<div class="page-url">${pageUrl}</div>`;
+        }
+
         row.innerHTML = `
             <td>${index}</td>
-            <td><a href="${pageUrl}" target="_blank" title="${pageUrl}">${shortenText(pageUrl, 30)}</a></td>
-            <td><img src="${imgSrc}" class="img-thumbnail" style="max-height: 100px; max-width: 150px;"
-                onerror="this.onerror=null; this.src='https://via.placeholder.com/150x100?text=Image+Not+Available'"></td>
+            <td>${urlDisplay}</td>
+            <td><img src="${imgSrc}" class="img-thumbnail"
+                onerror="this.onerror=null; this.src='https://via.placeholder.com/150x75?text=Image+Not+Available'"></td>
             <td>${isMissing ? '<span class="badge bg-danger">Missing Alt Text</span>' : altText}</td>
         `;
 
         resultsBody.appendChild(row);
+
+        // Add event listener for the copy button
+        const copyBtn = row.querySelector('.copy-url');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                const url = this.getAttribute('data-url');
+                navigator.clipboard.writeText(url).then(() => {
+                    // Change button to show copied
+                    const originalHTML = this.innerHTML;
+                    this.innerHTML = '<i class="fas fa-check"></i>';
+                    this.classList.add('btn-success');
+                    this.classList.remove('btn-outline-secondary');
+
+                    // Reset button after a short delay
+                    setTimeout(() => {
+                        this.innerHTML = originalHTML;
+                        this.classList.remove('btn-success');
+                        this.classList.add('btn-outline-secondary');
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Could not copy text: ', err);
+                });
+            });
+        }
     }
 
     function shortenText(text, maxLength) {
@@ -341,6 +652,7 @@ document.addEventListener('DOMContentLoaded', function() {
         summaryContent.innerHTML = `
             <div class="alert ${missingPercent > 30 ? 'alert-danger' : 'alert-info'}">
                 <h4>Image Analysis Complete</h4>
+                <p>Pages analyzed: <strong>${stats.pages}</strong></p>
                 <p>Total images found: <strong>${stats.total}</strong></p>
                 <p>Images missing alt text: <strong>${stats.missing}</strong> (${missingPercent}%)</p>
                 <p>Images with alt text: <strong>${stats.total - stats.missing}</strong> (${100 - missingPercent}%)</p>
@@ -379,7 +691,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const corsProxies = [
             (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
             (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-            (url) => `https://cors-anywhere.herokuapp.com/${url}`
+            (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+            (url) => `https://cors-anywhere.herokuapp.com/${url}`,
+            (url) => `https://crossorigin.me/${url}`
         ];
 
         let lastError = null;
@@ -390,7 +704,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 const proxyUrl = proxyFn(url);
                 console.log(`Trying proxy: ${proxyUrl}`);
 
-                const response = await fetch(proxyUrl);
+                const response = await fetch(proxyUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 Website Image Alt Analyzer'
+                    }
+                });
                 if (!response.ok) {
                     throw new Error(`Proxy returned status: ${response.status}`);
                 }
@@ -456,5 +774,41 @@ document.addEventListener('DOMContentLoaded', function() {
         summary.style.display = 'none';
         resultsTable.style.display = 'none';
         progressBar.style.width = '0%';
+    }
+
+    // Add this to your script right after you set up the table headers
+    function setupUrlToggle() {
+        // Create toggle button and add it to the header
+        const urlHeader = resultsTable.querySelector('thead th:nth-child(2)');
+        if (urlHeader) {
+            urlHeader.innerHTML = `
+                Page URL
+                <button id="toggle-urls" class="btn btn-sm btn-outline-secondary ms-2" title="Toggle URL display">
+                    <i class="fas fa-expand-alt"></i>
+                </button>
+            `;
+
+            // Add event listener for toggle
+            document.getElementById('toggle-urls').addEventListener('click', function() {
+                const urlCells = document.querySelectorAll('.page-url');
+                const isExpanded = this.getAttribute('data-expanded') === 'true';
+
+                if (isExpanded) {
+                    // Collapse URLs
+                    urlCells.forEach(cell => {
+                        cell.style.maxWidth = '300px';
+                    });
+                    this.innerHTML = '<i class="fas fa-expand-alt"></i>';
+                    this.setAttribute('data-expanded', 'false');
+                } else {
+                    // Expand URLs
+                    urlCells.forEach(cell => {
+                        cell.style.maxWidth = 'none';
+                    });
+                    this.innerHTML = '<i class="fas fa-compress-alt"></i>';
+                    this.setAttribute('data-expanded', 'true');
+                }
+            });
+        }
     }
 });

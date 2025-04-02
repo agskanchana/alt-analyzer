@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sitemap Image Alt Analyzer</title>
+    <title>Website Image Alt Analyzer</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
@@ -13,7 +13,7 @@
         <div class="header">
             <h1>
                 <i class="fas fa-image text-primary me-2"></i>
-                Sitemap Image Alt Analyzer
+                Website Image Alt Analyzer
             </h1>
             <p class="lead">Find missing alt tags in your website images</p>
         </div>
@@ -22,15 +22,69 @@
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-body">
-                        <h5 class="card-title">Enter Sitemap URL</h5>
-                        <div class="mb-3">
-                            <input type="url" class="form-control" id="sitemap-url"
-                                placeholder="https://example.com/sitemap.xml">
+                        <ul class="nav nav-tabs" id="analysisType" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="sitemap-tab" data-bs-toggle="tab"
+                                        data-bs-target="#sitemap-content" type="button" role="tab">
+                                    <i class="fas fa-sitemap me-2"></i>Analyze by Sitemap
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="crawler-tab" data-bs-toggle="tab"
+                                        data-bs-target="#crawler-content" type="button" role="tab">
+                                    <i class="fas fa-spider me-2"></i>Crawl Website
+                                </button>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content mt-3" id="analysisTabContent">
+                            <!-- Sitemap Tab -->
+                            <div class="tab-pane fade" id="sitemap-content" role="tabpanel">
+                                <h5 class="card-title">Enter Sitemap URL</h5>
+                                <div class="mb-3">
+                                    <input type="url" class="form-control" id="sitemap-url"
+                                        placeholder="https://example.com/sitemap.xml">
+                                </div>
+                                <button class="btn btn-primary" id="analyze-sitemap-btn">
+                                    <i class="fas fa-search me-2"></i>
+                                    Analyze Images via Sitemap
+                                </button>
+                            </div>
+
+                            <!-- Crawler Tab -->
+                            <div class="tab-pane fade show active" id="crawler-content" role="tabpanel">
+                                <h5 class="card-title">Enter Website URL</h5>
+                                <div class="mb-3">
+                                    <input type="url" class="form-control" id="website-url"
+                                        placeholder="https://example.com/">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Crawler Settings</label>
+                                    <div class="input-group mb-2">
+                                        <span class="input-group-text">Max Pages</span>
+                                        <input type="number" class="form-control" id="max-pages" value="200" min="1" max="200">
+                                        <span class="input-group-text">Max Depth</span>
+                                        <input type="number" class="form-control" id="max-depth" value="5" min="1" max="10">
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" id="stay-on-domain" checked>
+                                        <label class="form-check-label" for="stay-on-domain">
+                                            Stay on same domain
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="include-external-images">
+                                        <label class="form-check-label" for="include-external-images">
+                                            Include externally hosted images
+                                        </label>
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary" id="crawl-site-btn">
+                                    <i class="fas fa-spider me-2"></i>
+                                    Crawl Website for Images
+                                </button>
+                            </div>
                         </div>
-                        <button class="btn btn-primary" id="analyze-btn">
-                            <i class="fas fa-search me-2"></i>
-                            Analyze Images
-                        </button>
                     </div>
                 </div>
             </div>
@@ -39,7 +93,7 @@
         <div class="loading" id="loading">
             <div class="d-flex align-items-center">
                 <div class="spinner-border text-primary me-2" role="status"></div>
-                <span>Analyzing sitemap...</span>
+                <span id="loading-text">Analyzing...</span>
             </div>
             <div class="progress mt-2">
                 <div class="progress-bar progress-bar-striped progress-bar-animated" id="progress-bar"

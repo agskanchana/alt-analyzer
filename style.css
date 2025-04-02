@@ -77,3 +77,37 @@ body {
 .table td {
     vertical-align: middle;
 }
+
+/* New styles for URL display */
+.page-url {
+    max-width: 300px; /* Adjust this width as needed */
+    word-break: break-all;
+    white-space: normal;
+    font-size: 0.9em;
+}
+
+.page-url-tooltip {
+    cursor: pointer;
+    text-decoration: underline dotted;
+}
+
+.page-url a {
+    display: inline-block;
+}
+
+/* Optional: Adjust column widths for better display */
+#results-table th:nth-child(1) {
+    width: 5%;
+}
+
+#results-table th:nth-child(2) {
+    width: 35%; /* Page URL column width */
+}
+
+#results-table th:nth-child(3) {
+    width: 20%;
+}
+
+#results-table th:nth-child(4) {
+    width: 40%;
+}
